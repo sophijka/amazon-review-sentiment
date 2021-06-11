@@ -1,0 +1,25 @@
+data:
+  doc_path: data/sample_35/ #data/test_combine/ #data/sample_35/ # data/doc/
+  stopwords: data/stopwords/nl_snowball_final.txt
+  metadata_path: data/metadata/testset_files_2018_2020_DL.xlsx
+  review_path: data/en_de_kitchen_test.json #dataset_en_de_train_kitchen.json #en_de_kitchen_test.json
+preprocess:
+  paragraph_segmentation: True
+  length_threshold: 100
+indexer:
+  host: localhost # demo is running at 18.195.64.254
+  port: 9200
+  username: elastic
+  password: # or password in case you have changed a password to access elasticsearch instance
+  index: amazon_reviews_test
+  language: dutch
+  synonym_field: synonym
+retriever:
+  top_k: 5
+  type: bm25 # types available: [tfidf, bm25], bm25 is by default, also when type is not set
+  if_batch: True
+  batch_field: ["name", "peil_year"]
+  results:
+    path: results/hits_test_combine.json #results/hits_sample35a.json
+    csv_path: results/hits_test_combine.csv #results/hits_sample35a.csv
+
