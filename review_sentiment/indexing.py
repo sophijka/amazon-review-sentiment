@@ -6,14 +6,15 @@ import re
 from os import walk
 import json
 from haystack.document_store.elasticsearch import ElasticsearchDocumentStore
+from expertai.nlapi.cloud.client import ExpertAiClient
+from transformers import MarianMTModel, MarianTokenizer
+from pysbd.utils import PySBDFactory
+import spacy
+import torch
+import os
 
-
-def find(lst, key, value):
-    for i, dic in enumerate(lst):
-        if dic[key] == value:
-            return i
-    return -1
-
+os.environ["EAI_USERNAME"] = ""
+os.environ["EAI_PASSWORD"] = ""
 
 class Indexer:
 
@@ -36,6 +37,12 @@ class Indexer:
                                                          password=self.password,
                                                          index=self.index,
                                                          analyzer=self.language)
+        self.expertai_client = ExpertAiClient()
+        self.torch_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+        self.mt_model_name = f'Helsinki-NLP/opus-mt-de-en'
+        self.mt_tokenizer = MarianTokenizer.from_pretrained(self.mt_model_name)
+        self.mt_model = MarianMTModel.from_pretrained(self.mt_model_name).to(self.torch_device)
 
 
     def preprocess_reviews(self, review_file):
@@ -45,6 +52,8 @@ class Indexer:
         """
 
         data = []
+        # nlp = spacy.blank('de')
+        # nlp.add_pipe(PySBDFactory(nlp))
 
         with open(review_file) as f:
             for line in f:
@@ -59,12 +68,60 @@ class Indexer:
                 meta['review_title'] = d['review_title']
                 meta['language'] = d['language']
                 meta['product_category'] = d['product_category']
-                review['text'] = d['review_body']
-                review['meta'] = meta
-                data.append(review)
+                if d['language'] == 'en':
+                    review_text = d['review_body']
+                elif d['language'] == 'de':
+                    review_text = ' '.join([str(elem) for elem in self.translate(d['review_body'])])
+                    print("translated:", review_text)
+                meta['sentiment'] = self.review_sentiment(review_text)
+                if meta['sentiment'] is not None:
+                    review['text'] = d['review_body']
+                    review['meta'] = meta
+                    data.append(review)
 
         print(data)
         return data
+
+    # def sentence_detection(self, texts):
+    #     passage = self.nlp(texts)
+    #     return list(passage.sents)
+
+    def translate(self, stexts, language="de", sb=False):
+        # def translate(stexts, model, tokenizer, language="nld", sb=False):
+        # Prepare the text data into appropriate format for the model
+
+        # sentence boundary detection
+        list_src = []
+        src_texts = f">>{language}<< {stexts}"
+        list_src.append(src_texts)
+
+        # if sb:
+        #     texts = self.setence_detection(stexts)
+        #     template = lambda text: f"{text}" if language == "en" else f">>{language}<< {text}"
+        #     list_src = [template(text) for text in texts]
+        #
+        # else:
+        #     src_texts = f">>{language}<< {stexts}"
+        #     list_src.append(src_texts)
+
+        translated = self.mt_model.generate(
+                **self.mt_tokenizer.prepare_seq2seq_batch(list_src, return_tensors="pt").to(self.torch_device))
+        # convert generated token indices into text
+        translated_texts = [self.mt_tokenizer.decode(t, skip_special_tokens=True) for t in translated]
+
+        return translated_texts
+
+    def review_sentiment(self, text, language='en'):
+        print("input", text)
+        output = None
+        try:
+            output = self.expertai_client.specific_resource_analysis(
+             body={"document": {"text": text}}, params={'language': language, 'resource': 'sentiment'})
+        except:
+            pass
+
+        return output.sentiment.overall
+
 
     def index_data(self, review_path):
         self.document_store.write_documents(self.preprocess_reviews(review_path))
