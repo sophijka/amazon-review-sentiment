@@ -13,8 +13,8 @@ import spacy
 import torch
 import os
 
-os.environ["EAI_USERNAME"] = "sophijka@yahoo.com"
-os.environ["EAI_PASSWORD"] = "Osin1Lwiw$%"
+os.environ["EAI_USERNAME"] = ""
+os.environ["EAI_PASSWORD"] = ""
 
 
 class Indexer:
@@ -48,7 +48,7 @@ class Indexer:
     def preprocess_reviews(self, review_file):
         """
         Reading files to index and split them into paragraphs, if true
-        :return: a listvfvfv of Python dictionaries with text (or paragraphs), in "text", and metadata in "meta"
+        :return: a review in "text", and metadata in "meta"
         """
 
         data = []
