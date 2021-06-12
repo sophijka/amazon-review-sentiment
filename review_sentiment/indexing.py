@@ -13,8 +13,9 @@ import spacy
 import torch
 import os
 
-os.environ["EAI_USERNAME"] = ""
-os.environ["EAI_PASSWORD"] = ""
+os.environ["EAI_USERNAME"] = "sophijka@yahoo.com"
+os.environ["EAI_PASSWORD"] = "Osin1Lwiw$%"
+
 
 class Indexer:
 
@@ -44,7 +45,6 @@ class Indexer:
         self.mt_tokenizer = MarianTokenizer.from_pretrained(self.mt_model_name)
         self.mt_model = MarianMTModel.from_pretrained(self.mt_model_name).to(self.torch_device)
 
-
     def preprocess_reviews(self, review_file):
         """
         Reading files to index and split them into paragraphs, if true
@@ -54,7 +54,7 @@ class Indexer:
         data = []
         # nlp = spacy.blank('de')
         # nlp.add_pipe(PySBDFactory(nlp))
-
+        identifier = 0
         with open(review_file) as f:
             for line in f:
                 # data.append(json.loads(line))
@@ -68,16 +68,35 @@ class Indexer:
                 meta['review_title'] = d['review_title']
                 meta['language'] = d['language']
                 meta['product_category'] = d['product_category']
+                # review_text = d['review_body']
                 if d['language'] == 'en':
                     review_text = d['review_body']
                 elif d['language'] == 'de':
                     review_text = ' '.join([str(elem) for elem in self.translate(d['review_body'])])
+                    review['original_text'] = d['review_body']
                     print("translated:", review_text)
-                meta['sentiment'] = self.review_sentiment(review_text)
+
+                review_sent = self.review_sentiment(review_text)
+                meta['sentiment'] = review_sent.sentiment.overall
+
+                knowledge_syncons = ["product.commodity", "artifact.instrument", "object.food", "food.beverage"]
+                for i in review_sent.knowledge:
+                    if i.label in knowledge_syncons:
+                        print("i.syncon", i.syncon)
+                        for j in review_sent.sentiment.items:
+                            if j.syncon == i.syncon:
+                                # replace a dot with underscore, for Elastic
+                                label = i.label.replace(".", "_")
+                                meta[label] = j.lemma
+                                print("i.label", i.label)
+                                print("i.lemma", j.lemma)
+
                 if meta['sentiment'] is not None:
-                    review['text'] = d['review_body']
+                    meta['id'] = identifier
+                    review['text'] = review_text
                     review['meta'] = meta
                     data.append(review)
+                    identifier = identifier + 1
 
         print(data)
         return data
@@ -119,8 +138,8 @@ class Indexer:
              body={"document": {"text": text}}, params={'language': language, 'resource': 'sentiment'})
         except:
             pass
-
-        return output.sentiment.overall
+        # print(output.knowledge)
+        return output
 
 
     def index_data(self, review_path):
