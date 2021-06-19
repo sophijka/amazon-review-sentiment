@@ -1,20 +1,10 @@
 import logging
-import sys
-import os
-import pandas as pd
-import re
-from os import walk
 import json
 from haystack.document_store.elasticsearch import ElasticsearchDocumentStore
 from expertai.nlapi.cloud.client import ExpertAiClient
 from transformers import MarianMTModel, MarianTokenizer
-from pysbd.utils import PySBDFactory
-import spacy
 import torch
 import os
-
-os.environ["EAI_USERNAME"] = ""
-os.environ["EAI_PASSWORD"] = ""
 
 
 class Indexer:
@@ -41,23 +31,29 @@ class Indexer:
         self.expertai_client = ExpertAiClient()
         self.torch_device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        self.mt_model_name = f'Helsinki-NLP/opus-mt-de-en'
-        self.mt_tokenizer = MarianTokenizer.from_pretrained(self.mt_model_name)
-        self.mt_model = MarianMTModel.from_pretrained(self.mt_model_name).to(self.torch_device)
+        self.mt_model_name_de = f'Helsinki-NLP/opus-mt-de-en'
+        self.mt_tokenizer_de = MarianTokenizer.from_pretrained(self.mt_model_name_de)
+        self.mt_model_de = MarianMTModel.from_pretrained(self.mt_model_name_de).to(self.torch_device)
+
+        self.mt_model_name_es = f'Helsinki-NLP/opus-mt-es-en'
+        self.mt_tokenizer_es = MarianTokenizer.from_pretrained(self.mt_model_name_es)
+        self.mt_model_es = MarianMTModel.from_pretrained(self.mt_model_name_es).to(self.torch_device)
+
+        self.mt_model_name_ja = f'Helsinki-NLP/opus-mt-ja-en'
+        self.mt_tokenizer_ja = MarianTokenizer.from_pretrained(self.mt_model_name_ja)
+        self.mt_model_ja = MarianMTModel.from_pretrained(self.mt_model_name_ja).to(self.torch_device)
 
     def preprocess_reviews(self, review_file):
         """
-        Reading files to index and split them into paragraphs, if true
-        :return: a review in "text", and metadata in "meta"
+        Preprocess reviews by translating into English, if necessary, and extracting sentiment.
+        :param review_file: input review file in json
+        :return:
         """
 
         data = []
-        # nlp = spacy.blank('de')
-        # nlp.add_pipe(PySBDFactory(nlp))
         identifier = 0
         with open(review_file) as f:
             for line in f:
-                # data.append(json.loads(line))
                 d = json.loads(line)
                 meta = {}
                 review = {}
@@ -68,79 +64,176 @@ class Indexer:
                 meta['review_title'] = d['review_title']
                 meta['language'] = d['language']
                 meta['product_category'] = d['product_category']
-                # review_text = d['review_body']
+
                 if d['language'] == 'en':
                     review_text = d['review_body']
+
                 elif d['language'] == 'de':
                     review_text = ' '.join([str(elem) for elem in self.translate(d['review_body'])])
                     review['original_text'] = d['review_body']
                     print("translated:", review_text)
 
+                elif d['language'] == 'es':
+                    review_text = ' '.join([str(elem) for elem in self.translate(d['review_body'], language='es')])
+                    review['original_text'] = d['review_body']
+                    print("translated:", review_text)
+
+                elif d['language'] == 'ja':
+                    review_text = ' '.join([str(elem) for elem in self.translate(d['review_body'], language='ja')])
+                    review['original_text'] = d['review_body']
+                    print("translated:", review_text)
+
                 review_sent = self.review_sentiment(review_text)
-                meta['sentiment'] = review_sent.sentiment.overall
+                if review_sent:
+                    if review_sent.sentiment.overall:
+                        meta['sentiment'] = review_sent.sentiment.overall
+                    if review_sent.sentiment.positivity:
+                        meta['positivity'] = review_sent.sentiment.positivity
+                    if review_sent.sentiment.negativity:
+                        meta['negativity'] = review_sent.sentiment.negativity
+                    item_sentiment = self.all_items_sentiment(review_sent.sentiment.items)
+                    positive_phrases = []
+                    negative_phrases = []
+                    neutral_phrases = []
 
-                knowledge_syncons = ["product.commodity", "artifact.instrument", "object.food", "food.beverage"]
-                for i in review_sent.knowledge:
-                    if i.label in knowledge_syncons:
-                        print("i.syncon", i.syncon)
-                        for j in review_sent.sentiment.items:
-                            if j.syncon == i.syncon:
-                                # replace a dot with underscore, for Elastic
-                                label = i.label.replace(".", "_")
-                                meta[label] = j.lemma
-                                print("i.label", i.label)
-                                print("i.lemma", j.lemma)
+                    for s in item_sentiment:
+                        print(s)
+                        for key in s:
+                            if s[key] > 0:
+                                positive_phrases.append(key)
+                            elif s[key] < 0:
+                                negative_phrases.append(key)
+                            else:
+                                neutral_phrases.append(key)
 
-                if meta['sentiment'] is not None:
-                    meta['id'] = identifier
-                    review['text'] = review_text
-                    review['meta'] = meta
-                    data.append(review)
-                    identifier = identifier + 1
+                    if positive_phrases:
+                        pos = ' :'.join(positive_phrases)
+                        meta['positive_phrases'] = pos
+                        meta['positive_phrases'] = meta['positive_phrases'].lstrip()
+                    if negative_phrases:
+                        meta['negative_phrases'] = ' :'.join(negative_phrases)
+                        meta['negative_phrases'] = meta['negative_phrases'].lstrip()
+                    if neutral_phrases:
+                        meta['neutral_phrases'] = ' :'.join(neutral_phrases)
+                        meta['neutral_phrases'] = meta['neutral_phrases'].lstrip()
 
-        print(data)
+                    knowledge_syncons = ["product.commodity", "artifact.instrument", "object.food", "food.beverage"]
+                    for i in review_sent.knowledge:
+                        if i.label in knowledge_syncons:
+                            self.logger.info(f"Syncon: {i.syncon}")
+                            for j in review_sent.sentiment.items:
+                                if j.syncon == i.syncon:
+                                    # replace a dot with underscore, for Elastic
+                                    label = i.label.replace(".", "_")
+                                    meta[label] = j.lemma
+                                    self.logger.info(f"Label: {i.label}")
+                                    self.logger.info(f"Lemma: {j.lemma}")
+
+                    # if meta['sentiment'] is not None:
+                    if review_sent.sentiment.overall:
+                        meta['id'] = identifier
+                        review['text'] = review_text
+                        review['meta'] = meta
+                        data.append(review)
+                        identifier = identifier + 1
+            self.logger.info(f"Data {data}")
         return data
 
-    # def sentence_detection(self, texts):
-    #     passage = self.nlp(texts)
-    #     return list(passage.sents)
-
     def translate(self, stexts, language="de", sb=False):
-        # def translate(stexts, model, tokenizer, language="nld", sb=False):
-        # Prepare the text data into appropriate format for the model
+        """
+        Translate text from original language (German by default) into English
+        :param stexts: text to translate
+        :param language: original language
+        :param sb: sentence boundary detection flag
+        :return: translated text in English
+        """
 
-        # sentence boundary detection
         list_src = []
         src_texts = f">>{language}<< {stexts}"
         list_src.append(src_texts)
 
-        # if sb:
-        #     texts = self.setence_detection(stexts)
-        #     template = lambda text: f"{text}" if language == "en" else f">>{language}<< {text}"
-        #     list_src = [template(text) for text in texts]
-        #
-        # else:
-        #     src_texts = f">>{language}<< {stexts}"
-        #     list_src.append(src_texts)
+        if language == 'de':
+            translated = self.mt_model_de.generate(
+                **self.mt_tokenizer_de.prepare_seq2seq_batch(list_src, return_tensors="pt").to(self.torch_device))
 
-        translated = self.mt_model.generate(
-                **self.mt_tokenizer.prepare_seq2seq_batch(list_src, return_tensors="pt").to(self.torch_device))
-        # convert generated token indices into text
-        translated_texts = [self.mt_tokenizer.decode(t, skip_special_tokens=True) for t in translated]
+            # convert generated token indices into text
+            translated_texts = [self.mt_tokenizer_de.decode(t, skip_special_tokens=True) for t in translated]
+
+        if language == 'es':
+            translated = self.mt_model_es.generate(
+                **self.mt_tokenizer_es.prepare_seq2seq_batch(list_src, return_tensors="pt").to(self.torch_device))
+
+            # convert generated token indices into text
+            translated_texts = [self.mt_tokenizer_es.decode(t, skip_special_tokens=True) for t in translated]
+
+        if language == 'ja':
+            translated = self.mt_model_ja.generate(
+                **self.mt_tokenizer_ja.prepare_seq2seq_batch(list_src, return_tensors="pt").to(self.torch_device))
+
+            # convert generated token indices into text
+            translated_texts = [self.mt_tokenizer_ja.decode(t, skip_special_tokens=True) for t in translated]
 
         return translated_texts
 
     def review_sentiment(self, text, language='en'):
-        print("input", text)
+        """
+        Performs sentiment analysis on a review, for English by default
+        :param text: text to analyse
+        :param language: language for sentiment analyser, it's only English in expert.ai
+        :return: a json object that includes overall sentiment and also phrase sentiment
+        """
         output = None
         try:
             output = self.expertai_client.specific_resource_analysis(
              body={"document": {"text": text}}, params={'language': language, 'resource': 'sentiment'})
         except:
             pass
-        # print(output.knowledge)
         return output
 
+    def run_recursive(self, item):
+        """
+        Recursive procedure to extract all lemmata in phrases with sentiment
+        :param item:
+        :return: generator that includes lemmata and sentiment
+        """
+        yield {item.lemma: item.sentiment}
+        if isinstance(item.items, list):
+            for i in item.items:
+                yield from self.run_recursive(i)
+
+    def all_items_sentiment(self, input_data):
+        """
+        Extract fine-grained sentiment in the recursive fashion
+        :return: a list of dictionaries for item sentiment
+        """
+        results = []
+
+        for i in input_data:
+            phrase = ''
+            # extract lemmata recursively per phrase
+            result = self.run_recursive(i)
+            for r in result:
+                for key in r:
+                    phrase = phrase + " " + key
+                    sentiment = r[key]
+            # append all lemmata and the phrase sentiment score
+            results.append({phrase : sentiment})
+
+        return results
+
+    def item_sentiment(self, input_data):
+        """
+        Extract fine-grained sentiment, limited to the pair of lemmata. Not currently used.
+        :return: a list of dictionaries for item sentiment
+        """
+        results = []
+        for i in input_data:
+            print(i.lemma)
+            if len(i.items) == 1:
+                item = i.items[0].lemma + " " + i.lemma
+                results.append({item: i.sentiment})
+                print(i.lemma, i.items[0].lemma)
+        return results
 
     def index_data(self, review_path):
         self.document_store.write_documents(self.preprocess_reviews(review_path))
