@@ -1,8 +1,6 @@
 import yaml
 import os
-import pandas as pd
 from review_sentiment.indexing import Indexer
-import time
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,26 +22,13 @@ if __name__ == '__main__':
     for key, value in config.items():
         logger.info(f"{key} : {value}")
 
-    if not os.path.exists(os.path.dirname(config["retriever"]["results"]["path"])):
-        os.makedirs(os.path.dirname(config["retriever"]["results"]["path"]))
-
     host = config["indexer"]["host"]
     port = config["indexer"]["port"]
     username = config["indexer"]["username"]
     password = config["indexer"]["password"]
     index = config["indexer"]["index"]
     language = config["indexer"]["language"]
-    retrieval_type = config["retriever"]["type"]
-    top_k = config["retriever"]["top_k"]
-    agg_fields = config["retriever"]["batch_field"]
-    index = config["indexer"]["index"]
-    synonym_field = config["indexer"]["synonym_field"]
     review_path = config["data"]["review_path"]
-
-    # queries_file = config["data"]["query_path"]
-    doc_path = config["data"]["doc_path"]
-    metadata_path = config["data"]["metadata_path"]
-    length_threshold = config["preprocess"]["length_threshold"]
 
     indexer = Indexer(host, port, username, password, index, language)
 
