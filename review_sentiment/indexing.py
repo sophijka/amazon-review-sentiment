@@ -6,6 +6,9 @@ from transformers import MarianMTModel, MarianTokenizer
 import torch
 import os
 
+os.environ["EAI_USERNAME"] = ""
+os.environ["EAI_PASSWORD"] = ""
+
 
 class Indexer:
 
@@ -71,17 +74,14 @@ class Indexer:
                 elif d['language'] == 'de':
                     review_text = ' '.join([str(elem) for elem in self.translate(d['review_body'])])
                     review['original_text'] = d['review_body']
-                    print("translated:", review_text)
 
                 elif d['language'] == 'es':
                     review_text = ' '.join([str(elem) for elem in self.translate(d['review_body'], language='es')])
                     review['original_text'] = d['review_body']
-                    print("translated:", review_text)
 
                 elif d['language'] == 'ja':
                     review_text = ' '.join([str(elem) for elem in self.translate(d['review_body'], language='ja')])
                     review['original_text'] = d['review_body']
-                    print("translated:", review_text)
 
                 review_sent = self.review_sentiment(review_text)
                 if review_sent:
@@ -97,7 +97,6 @@ class Indexer:
                     neutral_phrases = []
 
                     for s in item_sentiment:
-                        print(s)
                         for key in s:
                             if s[key] > 0:
                                 positive_phrases.append(key)
@@ -228,11 +227,9 @@ class Indexer:
         """
         results = []
         for i in input_data:
-            print(i.lemma)
             if len(i.items) == 1:
                 item = i.items[0].lemma + " " + i.lemma
                 results.append({item: i.sentiment})
-                print(i.lemma, i.items[0].lemma)
         return results
 
     def index_data(self, review_path):
