@@ -19,7 +19,7 @@ Our tech stack includes the back-end in python, front-end in React, and deployme
 
 To start indexing data with sentiment information follow the next steps:
 
-1. To install requirements, run `pip install -r requirement.txt`
+1. To install requirements, run `pip install -r requirements.txt`
 
 2. Replace credentials for expert.ai API in `review_sentiment/indexing.py`
 
