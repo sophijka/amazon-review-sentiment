@@ -15,7 +15,7 @@ To exemplify diverse functionality of expert.ai we opted for the dataset of mult
 
 Our tech stack includes the back-end in python, front-end in React, and deployment via Netlify. For search functionality we use Elastic, for machine translation MarianMT models and expert.ai for linguistic and sentiment analysis. Elastic is being hosted in the AWS cloud environment. Since we are using Elastic stack for search, we have also built a Kibana dashboard, to exemplify the types of analyses that can be conducted on the indexed data, see our video. We have noticed that the number of review stars strongly correlates with the overall sentiment regardless of a language, which provides additional support for the use of machine-translated data.
 
-# Installing
+# Installation
 
 To start indexing data with sentiment information follow the next steps:
 
